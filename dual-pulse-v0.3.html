@@ -1,0 +1,55 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dual / Pulse v0.3</title><style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#0c1426;color:#e9f1ff}*{box-sizing:border-box}body{max-width:820px;margin:auto;padding:18px}h1{margin-bottom:4px}h2{font-size:1.13rem;margin-top:0}.muted{color:#aebcd6}.card{background:#17243c;border:1px solid #344968;border-radius:16px;padding:18px;margin:16px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}button{background:#2b405f;border:1px solid #607594;color:white;padding:12px 15px;border-radius:10px;font-weight:650;font-size:1rem;cursor:pointer}button.primary{background:#57d8c3;color:#062b2a;border:0}button.stop{background:#9e3945}button:disabled{opacity:.4}label{display:block;margin:14px 0 6px;font-weight:600}input[type=range]{width:100%}select{width:100%;background:#233653;color:white;padding:12px;border-radius:8px;border:1px solid #607594}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#091224;padding:12px;border-radius:10px;max-height:310px;overflow:auto}.status{font-size:.9rem;color:#8ee2d2}.warn{color:#ffd493}#meter{height:15px;background:#263753;border-radius:10px;overflow:hidden}#fill{height:100%;background:#57d8c3;width:0%}a{color:#8ee2d2}
+</style></head><body><h1>Dual / Pulse <span class="status">v0.2 prototype</span></h1><p class="muted">One phone microphone → one calculated RGB frame → both MELK lamps. Whole-lamp sync first; segmented effects remain unverified.</p>
+<section class="card"><h2>1 · Connect both lamps</h2><p class="warn">Switch off other lamp apps first. Pair each lamp separately through Chrome's Bluetooth picker. If Chrome reconnects the same lamp, disconnect and retry.</p><div class="row"><button id="a" class="primary">Connect lamp A</button><button id="b" class="primary">Connect lamp B</button><button id="dis">Disconnect both</button></div><p id="state">A: disconnected · B: disconnected</p><div class="row"><button id="red" disabled>Set both red</button><button id="blue" disabled>Set both blue</button><button id="off" disabled>Set both black</button></div><div class="row"><button id="testa">Test A red</button><button id="testb">Test B blue</button></div><p class="muted">First test A and B separately. Writes are serialized, not simultaneous; individual errors are logged. Uses the verified 0x10 RGB command.</p></section>
+<section class="card"><h2>2 · Shared music response</h2><label for="mode">Color response</label><select id="mode"><option value="red">Red pulse</option><option value="cyan">Cyan pulse</option><option value="rainbow">Hue cycles with time; music controls brightness</option></select><label for="gain">Sensitivity <span id="gainv">4.0</span>×</label><input id="gain" type="range" min="1" max="16" step="0.5" value="4"><label for="floor">Minimum brightness <span id="floorv">0</span>%</label><input id="floor" type="range" min="0" max="50" step="1" value="0"><label for="fps">Update rate <span id="fpsv">8</span> FPS</label><input id="fps" type="range" min="2" max="15" step="1" value="8"><div class="row"><button id="start" class="primary" disabled>Start phone-mic sync</button><button id="stop" class="stop" disabled>Stop</button></div><label>Phone microphone level: <span id="level">0</span></label><div id="meter"><div id="fill"></div></div><p class="muted">Microphone permission is requested when you start. No recording or upload. Chrome cannot directly capture audio playing inside most other apps; play music through speakers for this first test.</p></section>
+<section class="card"><h2>3 · Diagnostics</h2><p id="info" class="status">Ready to connect.</p><div class="row"><button id="copy">Copy log</button><button id="clear">Clear log</button></div><pre id="log"></pre><p class="warn">Two independent BLE writes are serialized with a short delay to avoid overlapping GATT operations. This prototype uses one shared frame and sends it to both devices; actual visual alignment needs physical verification.</p></section>
+<script>
+'use strict';
+const $=id=>document.getElementById(id), SERVICE=0xfff0,CHAR=0xfff3;
+const lamps=[{device:null,characteristic:null},{device:null,characteristic:null}];
+let running=false, audioStream=null,audioContext=null,analyser=null,samples=null,frames=0,failures=0;
+let logLines=[]; let writeQueue=Promise.resolve(); const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function log(s){logLines.push(`${new Date().toLocaleTimeString()}  ${s}`);if(logLines.length>250)logLines.shift();$('log').textContent=logLines.join('\n');$('log').scrollTop=$('log').scrollHeight;}
+function online(i){return !!(lamps[i].device?.gatt?.connected&&lamps[i].characteristic)}
+function ui(){const count=Number(online(0))+Number(online(1));$('state').textContent=`A: ${online(0)?'connected':'disconnected'} · B: ${online(1)?'connected':'disconnected'}`;$('a').disabled=running||online(0);$('b').disabled=running||online(1);$('start').disabled=running||count!==2;$('stop').disabled=!running;for(const id of ['red','blue','off'])$(id).disabled=running||count!==2; $('testa').disabled=running||!online(0);$('testb').disabled=running||!online(1);}
+function rgb(r,g,b){return Uint8Array.from([0x7e,7,5,3,r,g,b,0x10,0xef]);}
+async function connect(i){if(!navigator.bluetooth){log('Web Bluetooth unavailable: use Android Chrome over HTTPS.');return;}try{const device=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'MELK'}],optionalServices:[SERVICE]});if(lamps.some((x,j)=>j!==i&&x.device?.id===device.id)){log('This lamp is already connected as '+(i?'A':'B')+'. Choose the other lamp.');return;}const gatt=await device.gatt.connect();const service=await gatt.getPrimaryService(SERVICE);const characteristic=await service.getCharacteristic(CHAR);lamps[i]={device,characteristic};device.addEventListener('gattserverdisconnected',()=>{if(lamps[i].device===device){lamps[i].characteristic=null;log('Lamp '+(i?'B':'A')+' disconnected');if(running)stop();ui();}});log(`Connected lamp ${i?'B':'A'}: ${device.name||device.id}; FFF3 ready; write=${characteristic.properties.write}; writeWithoutResponse=${characteristic.properties.writeWithoutResponse}`);await sleep(450);}catch(e){log('Connection '+(i?'B':'A')+' failed: '+e.message);}ui();}
+function hex(frame){return [...frame].map(v=>v.toString(16).padStart(2,'0').toUpperCase()).join(' ');}
+async function writeRaw(i,frame){
+  if(!online(i))throw Error('Lamp '+(i?'B':'A')+' disconnected');
+  const c=lamps[i].characteristic;
+  // MELK Spectrum Lab uses writeWithoutResponse successfully on this exact controller.
+  if(c.properties.writeWithoutResponse && c.writeValueWithoutResponse)await c.writeValueWithoutResponse(frame);
+  else if(c.properties.write && c.writeValueWithResponse)await c.writeValueWithResponse(frame);
+  else await c.writeValue(frame);
+}
+function queuedWrite(i,frame){
+  const job=writeQueue.catch(()=>{}).then(()=>writeRaw(i,frame));
+  writeQueue=job.catch(()=>{});
+  return job;
+}
+async function both(frame){
+  if(!online(0)||!online(1))throw Error('Both lamps must be connected');
+  try{await queuedWrite(0,frame);}catch(e){throw Error('Lamp A write failed: '+e.message);}
+  await sleep(90);
+  try{await queuedWrite(1,frame);}catch(e){throw Error('Lamp B write failed (A succeeded): '+e.message);}
+}
+async function one(i,r,g,b){
+  const frame=rgb(r,g,b);
+  try{await queuedWrite(i,frame);log('Lamp '+(i?'B':'A')+' write accepted: '+hex(frame)+'; check physical color');}
+  catch(e){log('Lamp '+(i?'B':'A')+' write FAILED: '+e.message);}
+}
+async function staticColor(r,g,b,label){try{await both(rgb(r,g,b));log(label+' accepted on both; verify visually.');}catch(e){log(label+' failed: '+e.message);ui();}}
+function clamp(v){return Math.max(0,Math.min(255,Math.round(v)));}
+function hue(h){const k=(n)=>(n+h/60)%6;const f=n=>255-255*Math.max(Math.min(k(n),4-k(n),1),0);return [f(5),f(3),f(1)].map(clamp);}
+function frameFor(level,t){const minimum=Number($('floor').value)/100;const v=minimum+(1-minimum)*level;let base=$('mode').value==='red'?[255,0,0]:$('mode').value==='cyan'?[0,255,220]:hue((t/45)%360);return rgb(...base.map(x=>clamp(x*v)));}
+async function cleanup(){if(audioStream){audioStream.getTracks().forEach(t=>t.stop());audioStream=null;}if(audioContext){await audioContext.close().catch(()=>{});audioContext=null;}analyser=null;samples=null;}
+function stop(){running=false;$('info').textContent=`Stopped · ${frames} shared frames · ${failures} errors`;log('STOP requested');ui();}
+async function start(){if(running||!online(0)||!online(1))return;try{audioStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});audioContext=new (window.AudioContext||window.webkitAudioContext)();await audioContext.resume();analyser=audioContext.createAnalyser();analyser.fftSize=1024;analyser.smoothingTimeConstant=0.5;samples=new Uint8Array(analyser.fftSize);audioContext.createMediaStreamSource(audioStream).connect(analyser);}catch(e){log('Microphone failed: '+e.message);await cleanup();return;}running=true;frames=0;failures=0;ui();log('START shared phone-mic RGB sync');$('info').textContent='Streaming to both lamps';try{while(running&&online(0)&&online(1)){const begun=performance.now();analyser.getByteTimeDomainData(samples);let sum=0;for(const s of samples){const d=(s-128)/128;sum+=d*d;}const rms=Math.sqrt(sum/samples.length);const level=Math.min(1,rms*Number($('gain').value));$('level').textContent=Math.round(level*255);$('fill').style.width=(level*100).toFixed(0)+'%';try{await both(frameFor(level,begun));frames++;if(frames%40===0)log('Sent '+frames+' shared RGB frames');}catch(e){failures++;log('Stream BLE failure: '+e.message);running=false;break;}const wait=Math.max(0,1000/Number($('fps').value)-(performance.now()-begun));await new Promise(r=>setTimeout(r,wait));}}finally{running=false;await cleanup();ui();$('info').textContent=`Stopped · ${frames} shared frames · ${failures} errors`;log('STREAM END '+frames+' frames, '+failures+' errors');}}
+$('a').onclick=()=>connect(0);$('b').onclick=()=>connect(1);$('dis').onclick=()=>{stop();for(const l of lamps){try{l.device?.gatt?.disconnect();}catch{}l.characteristic=null;l.device=null;}ui();};
+$('testa').onclick=()=>one(0,255,0,0);$('testb').onclick=()=>one(1,0,0,255);$('red').onclick=()=>staticColor(255,0,0,'RED');$('blue').onclick=()=>staticColor(0,0,255,'BLUE');$('off').onclick=()=>staticColor(0,0,0,'BLACK');$('start').onclick=start;$('stop').onclick=stop;
+for(const id of ['gain','floor','fps'])$(id).oninput=()=>$(id+'v').textContent=$(id).value+(id==='floor'?'':id==='gain'?'':'');
+$('copy').onclick=async()=>{try{await navigator.clipboard.writeText(logLines.join('\n'));log('Log copied');}catch(e){log('Copy failed: '+e.message);}};$('clear').onclick=()=>{logLines=[];$('log').textContent='';};
+window.addEventListener('pagehide',()=>{running=false;cleanup();});ui();log('Dual / Pulse v0.3 ready; no BLE writes sent.');
+</script></body></html>
