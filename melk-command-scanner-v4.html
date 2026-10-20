@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MELK Command Scanner v4 — Faster Scan</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { background:#101722; color:#e7efff; max-width:800px; margin:25px auto; padding:0 16px; }
+    section { background:#202c3c; border-radius:12px; padding:16px; margin:12px 0; }
+    button,input { font:inherit; background:#34465d; color:white; border:1px solid #667c95; border-radius:7px; padding:9px; margin:4px; }
+    button { cursor:pointer; }
+    button:focus-visible,input:focus-visible { outline:2px solid #adcaff; outline-offset:2px; }
+    input[type=number] { width:115px; }
+    input[type=text] { width:min(90%,440px); }
+    input[type=range] { width:min(100%,320px); vertical-align:middle; }
+    #log { white-space:pre-wrap; max-height:220px; overflow:auto; background:#111a27; padding:10px; font:12px monospace; }
+    small { color:#b3c1d1; }
+    .speeds button { padding:8px 11px; }
+    .speeds button.active { background:#35618a; border-color:#adcaff; }
+    .warning { color:#ffdb9b; }
+  </style>
+</head>
+<body>
+  <h2>MELK Command Scanner v4</h2>
+  <p>Faster-scanning edition of v3. Default starting point: <b>0x22 00 = index 8704</b>. Connect one test lamp.</p>
+  <section>
+    <button id="connect">Connect BLE lamp</button>
+    <button id="disconnect">Disconnect</button>
+    <p id="status">Not connected</p>
+    <small>Requires Web Bluetooth in Chrome on Android over HTTPS or localhost. Service FFF0, write characteristic FFF3.</small>
+  </section>
+  <section>
+    <h3>Scan</h3>
+    <label>Start <input id="start" type="number" min="0" max="65535" value="8704"></label>
+    <label>End <input id="end" type="number" min="0" max="65535" value="65535"></label>
+    <p>
+      <label for="delay">Delay <b id="delayValue">150 ms</b></label><br>
+      <input id="delay" type="range" min="50" max="2000" step="25" value="150">
+      <span id="rateValue">~6.7 commands/sec + BLE overhead</span>
+    </p>
+    <div class="speeds" aria-label="Quick speed presets">
+      <button data-speed="150" type="button">150 ms</button>
+      <button data-speed="100" type="button">100 ms</button>
+      <button data-speed="75" type="button">75 ms</button>
+      <button data-speed="50" type="button">50 ms</button>
+    </div>
+    <p><small class="warning">Try 100 ms first. 75–50 ms is experimental: the lamp or Bluetooth stack may miss or delay commands, and quick effects can be hard to spot. Recheck anything suspicious at 150–300 ms.</small></p>
+    <p>Next index: <b id="next">8704</b><br>Last command: <code id="last">—</code></p>
+    <button id="run">Start / Resume</button><button id="pause">Pause</button><button id="stop">Stop</button>
+    <p><button id="prev">◀ Previous (-1)</button><button id="step">Send next (+1) ▶</button></p>
+    <button id="bookmark">Bookmark last index</button><button id="export">Export CSV</button>
+    <p id="progress">0 commands · 0 errors</p>
+    <small>Packet template: 7E 07 XX YY FF 00 00 10 EF; index = XX × 256 + YY.
+      Change Start to jump to another family while paused. Previous replays the command before the last sent index;
+      Next sends the queued index. Stop ends automatic scanning without disconnecting, preserving the next index.</small>
+  </section>
+  <section>
+    <h3>Manual command / health check</h3>
+    <input id="manual" type="text" value="7E 07 05 03 00 00 FF 10 EF" aria-label="Manual nine-byte hexadecimal packet">
+    <p><button id="send">Send packet</button><button id="blue">Blue</button><button id="red">Red</button><button id="power">Power on</button></p>
+    <small>Sending a manual packet pauses scanning. If the controller becomes unresponsive, stop and power-cycle rather than continuing unknown commands.</small>
+  </section>
+  <section><h3>Activity</h3><div id="log" role="log" aria-live="polite">Ready.</div></section>
+<script>
+const $ = id => document.getElementById(id);
+let dev = null, ch = null, running = false, busy = false, next = 8704;
+let sent = 0, errors = 0, lastIndex = null, lastPacket = '', marks = [], history = [];
+const hex = bytes => Array.from(bytes, x => x.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+function log(s) {
+  $('log').textContent = new Date().toLocaleTimeString() + ' ' + s + '\n' + $('log').textContent.slice(0, 8000);
+}
+function update() {
+  $('next').textContent = next;
+  $('last').textContent = lastPacket || '—';
+  $('progress').textContent = `${sent} commands · ${errors} errors · ${marks.length} bookmarks`;
+}
+function pause() { running = false; log('Paused; next index ' + next); }
+function stop() { running = false; log('Stopped at next index ' + next + '. Press Start / Resume to continue here.'); }
+function lost() { running = false; ch = null; $('status').textContent = 'Disconnected'; log('Disconnected'); }
+$('connect').onclick = async () => {
+  try {
+    pause();
+    if (!navigator.bluetooth) throw Error('Web Bluetooth unavailable. Open the HTTPS GitHub Pages URL in Chrome on Android.');
+    dev = await navigator.bluetooth.requestDevice({acceptAllDevices:true, optionalServices:[0xfff0]});
+    dev.addEventListener('gattserverdisconnected', lost);
+    const server = await dev.gatt.connect();
+    ch = await (await server.getPrimaryService(0xfff0)).getCharacteristic(0xfff3);
+    $('status').textContent = 'Connected: ' + (dev.name || 'lamp');
+    log('Connected');
+  } catch(e) { log('Connect error: ' + e.message); }
+};
+$('disconnect').onclick = () => { pause(); if (dev?.gatt?.connected) dev.gatt.disconnect(); lost(); };
+async function write(bytes, kind) {
+  if (!ch) throw Error('Connect lamp first');
+  await ch.writeValueWithoutResponse(new Uint8Array(bytes));
+  sent++;
+  lastPacket = hex(bytes);
+  history.push({kind, time:new Date().toISOString(), packet:lastPacket});
+  update();
+}
+function parse(s) {
+  const h = s.replace(/0x/gi, '').replace(/[\s,:-]/g, '');
+  if (!/^[a-fA-F0-9]{18}$/.test(h)) throw Error('Enter exactly nine hex bytes');
+  return h.match(/../g).map(x => parseInt(x, 16));
+}
+async function manual(s, label) {
+  pause();
+  if (busy) { log('Wait for the current scan command to finish, then tap Send packet again.'); return; }
+  busy = true;
+  try { const b = parse(s); await write(b, label); log(label + ': ' + hex(b)); }
+  catch(e) { errors++; update(); log('Error: ' + e.message); }
+  finally { busy = false; }
+}
+$('send').onclick = () => manual($('manual').value, 'manual');
+$('blue').onclick = () => manual('7E 07 05 03 00 00 FF 10 EF', 'blue');
+$('red').onclick = () => manual('7E 07 05 03 FF 00 00 10 EF', 'red');
+$('power').onclick = () => manual('7E 04 04 01 00 01 FF 00 EF', 'power');
+$('pause').onclick = pause;
+$('stop').onclick = stop;
+function updateSpeed() {
+  const ms = Number($('delay').value);
+  $('delayValue').textContent = ms + ' ms';
+  $('rateValue').textContent = '~' + (1000 / ms).toFixed(1) + ' commands/sec + BLE overhead';
+  document.querySelectorAll('[data-speed]').forEach(b => b.classList.toggle('active', Number(b.dataset.speed) === ms));
+}
+$('delay').oninput = updateSpeed;
+document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => {
+  $('delay').value = b.dataset.speed;
+  updateSpeed();
+});
+$('start').onchange = () => {
+  if (!running) {
+    next = Math.max(0, Math.min(65535, Number($('start').value) || 0));
+    update();
+  }
+};
+$('run').onclick = async () => {
+  if (running || busy) return;
+  if (!ch) { log('Connect first'); return; }
+  const start = Number($('start').value), end = Number($('end').value);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start > 65535 || end < 0 || end > 65535 || start > end) {
+    log('Invalid range'); return;
+  }
+  if (next < start || next > end) next = start;
+  running = true; busy = true;
+  log('Scanning from ' + next + ' at ' + $('delay').value + ' ms');
+  while (running && next <= end) {
+    const i = next, b = [126,7,(i>>8)&255,i&255,255,0,0,16,239];
+    try {
+      await write(b, 'scan ' + i);
+      lastIndex = i;
+      next = i + 1;
+      update();
+    } catch(e) {
+      errors++; running = false; update(); log('Stopped at ' + i + ': ' + e.message); break;
+    }
+    if (!running) break;
+    await new Promise(r => setTimeout(r, Number($('delay').value)));
+  }
+  if (running) { running = false; log('Scan complete'); }
+  busy = false;
+};
+async function step(direction) {
+  if (running) { pause(); log('Paused automatic scan. Tap step again.'); return; }
+  if (busy) { log('Wait for current command to finish'); return; }
+  const target = next + (direction < 0 ? -2 : 0);
+  if (target < 0 || target > 65535) { log('Index out of range'); return; }
+  if (!ch) { log('Connect first'); return; }
+  busy = true;
+  const b = [126,7,(target>>8)&255,target&255,255,0,0,16,239];
+  try {
+    await write(b, 'step ' + target);
+    lastIndex = target; next = target + 1; update();
+    log('Manual step: ' + target + ' (0x' + ((target>>8)&255).toString(16).toUpperCase().padStart(2,'0') + ' ' + (target&255).toString(16).toUpperCase().padStart(2,'0') + ')');
+  } catch(e) { errors++; update(); log('Step error: ' + e.message); }
+  finally { busy = false; }
+}
+$('prev').onclick = () => step(-1);
+$('step').onclick = () => step(1);
+$('bookmark').onclick = () => {
+  if (lastIndex === null) { log('No scan index yet'); return; }
+  marks.push({index:lastIndex, time:new Date().toISOString(), packet:hex([126,7,(lastIndex>>8)&255,lastIndex&255,255,0,0,16,239])});
+  log('Bookmarked ' + lastIndex); update();
+};
+$('export').onclick = () => {
+  const rows = [['kind','index','time','packet'],...marks.map(x => ['bookmark',x.index,x.time,x.packet]),...history.map(x => [x.kind,'',x.time,x.packet])];
+  const csv = rows.map(row => row.map(x => '"' + String(x).replace(/"/g,'""') + '"').join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+  a.download = 'melk-v4-log.csv'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href),1000);
+};
+updateSpeed(); update();
+</script>
+</body>
+</html>
