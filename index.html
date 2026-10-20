@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0c1426"><title>MELK Spectrum Lab v1.9</title>
+<style>
+:root{color-scheme:dark;--bg:#0a1020;--panel:#161f34;--line:#37465f;--ink:#f4f7ff;--muted:#b9c7dc;--mint:#72e6d5;--yellow:#ffd795;--pink:#fb98a7}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% 0,#2b2354 0,transparent 42%),var(--bg);color:var(--ink);font:15px/1.5 system-ui,Arial,sans-serif}main{max-width:680px;margin:auto;padding:24px 14px 50px}header h1{font-size:clamp(30px,9vw,49px);line-height:1;margin:7px 0;letter-spacing:-.045em}p{margin:7px 0 12px}.eyebrow{letter-spacing:.12em;font-size:11px;color:var(--mint);font-weight:800}.muted,.hint{color:var(--muted)}.hint{font-size:13px}h2{font-size:18px;margin:0 0 8px}.card{background:var(--panel);border:1px solid var(--line);border-radius:17px;margin:14px 0;padding:17px}.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.btn{border:1px solid #566b8a;background:#293a59;color:#fff;border-radius:10px;padding:11px 13px;min-height:46px;font:700 14px system-ui;cursor:pointer}.btn.primary{background:#70dfc9;color:#092027;border-color:transparent}.btn.critical{background:#55323d;border-color:#a45e70}.btn:disabled{opacity:.4;cursor:default}.badge{border:1px solid #6e7d99;border-radius:30px;color:var(--muted);font-size:12px;padding:5px 10px;font-weight:800}.badge.good{color:var(--mint);border-color:#3e8679}.warning{background:#273043;border-left:3px solid var(--yellow);padding:11px;border-radius:8px;font-size:13px}.label{font-size:13px;font-weight:700;color:var(--muted);display:block;margin:15px 0 7px}select{width:100%;background:#202d48;color:#fff;border:1px solid #607493;border-radius:9px;padding:12px;font-size:15px}input[type=range]{width:100%;accent-color:var(--mint)}.code{background:#0d1628;border:1px solid #2e3f59;border-radius:8px;font:12px/1.5 ui-monospace,Consolas,monospace;color:#c5f5ed;padding:10px;overflow-wrap:anywhere}.log{white-space:pre-wrap;max-height:320px;min-height:150px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,monospace;background:#0b1120;border:1px solid #31405b;border-radius:9px;padding:11px;overflow-wrap:anywhere}.bar{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin:10px 0}.bar span{height:14px;background:#223047;border-radius:3px}.bar span.active{background:var(--mint)}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--mint);outline-offset:2px}.answers button{font-size:12px;padding:9px}.tiny{font-size:12px;color:var(--muted)}footer{font-size:12px;color:var(--muted);line-height:1.6}
+</style></head><body><main>
+<header><div class="eyebrow">DUAL / PULSE · PROTOCOL EXPERIMENT · v1.9</div><h1>SPECTRUM <span style="color:var(--mint)">LAB</span></h1><p class="muted">Test whether the <b>MELK-OA10WCT</b> equalizer modes respond to a phone-supplied signal by lighting separate LED sections. One lamp, continuous external signal tests, no firmware changes.</p></header>
+<section class="card"><div class="row between"><h2>1 · Connect and confirm</h2><span id="status" class="badge">Disconnected</span></div>
+<div class="row"><button class="btn primary" id="connect">Connect MELK lamp</button><button class="btn" id="disconnect">Disconnect</button></div>
+<p class="hint">Use Android Chrome over HTTPS. Fully close other lamp apps first. Connection sends the ON command proven to work on your hardware.</p>
+<div class="row"><button id="testred" class="btn" disabled>Test red</button><button id="confirm" class="btn primary" disabled>Yes, lamp is red</button></div>
+<p class="warning" id="notice">Confirm the physical lamp turns red before the experiments unlock. A successful browser write is not proof the lamp responded.</p></section>
+<section class="card"><h2>2 · Built-in equalizer</h2><p class="hint">These mode bytes are experimental and based on a related MELK controller implementation, but compatibility with this exact lamp is unverified. Test in a quiet room.</p>
+<label class="label" for="mode">Choose mode</label><select id="mode"><option value="2">Spectrum (0x82)</option><option value="6">Spectrum II (0x86)</option><option value="0">Energetic (0x80)</option><option value="1">Rhythm (0x81)</option><option value="3">Rolling (0x83)</option><option value="4">Energetic II (0x84)</option></select>
+<div class="row" style="margin-top:12px"><button class="btn" id="eq" disabled>Start EQ mode</button><button class="btn" id="micon" disabled>Internal mic ON</button><button class="btn" id="micoff" disabled>Internal mic OFF</button></div>
+<p class="hint">Start EQ mode and observe any moving sections. Then switch the internal microphone OFF to isolate the test packets. If the mode stops entirely, record that too.</p></section>
+<section class="card"><h2>3 · Feed an audio-level test</h2>
+<p class="hint">This sends the documented <b>music-reactive RGB frame (flag 0x20)</b>, which differs from the ordinary whole-lamp RGB frame (flag 0x10). It may be ignored or act on the whole lamp; we're testing whether EQ mode interprets it as section data.</p>
+<div class="row between"><span class="label">Test level</span><strong id="leveltext">128 / 255</strong></div><input id="level" type="range" min="0" max="255" step="1" value="128" />
+<div id="bar" class="bar" aria-label="Illustrative level preview"></div><p class="tiny">The 10 blocks are a <b>preview only</b>, not proof that the real lamp supports zone control.</p>
+<div class="row"><button class="btn primary" id="sendmusic" disabled>Send music frame</button><button class="btn" id="sendnormal" disabled>Compare normal RGB</button></div>
+<div class="row" style="margin-top:9px"><button class="btn" id="steps" disabled>Run 0 → 85 → 170 → 255 → 0</button><button class="btn critical" id="stop">Stop test</button></div>
+<p class="hint">Try <b>music frame</b> at 0, 85, 170, and 255. Does the height change from the bottom, or does the entire tower just brighten? The comparison button sends normal RGB at the same value.</p>
+<div id="command" class="code"></div></section>
+<section class="card"><h2>Custom BLE HEX sender · experimental</h2><p class="hint">Sends raw hexadecimal bytes to the connected lamp’s FFF3 characteristic. Only send commands you intend to test. The two preset buttons below duplicate the normal/music red packets for direct comparison.</p><label class="label" for="customhex">HEX bytes (spaces optional)</label><input id="customhex" type="text" spellcheck="false" autocomplete="off" value="7E 07 05 03 FF 00 00 20 EF" style="width:100%;padding:12px;background:#202d48;color:white;border:1px solid #607493;border-radius:9px;font:14px monospace"><div class="row" style="margin-top:12px"><button class="btn" id="presetnormal" disabled>Normal red · 0x10</button><button class="btn" id="presetmusic" disabled>Music red · 0x20</button><button class="btn primary" id="sendhex" disabled>Send custom HEX</button></div><p class="hint" id="hexnotice">Connect and verify red before sending.</p></section>
+<section class="card"><h2>4 · Continuous external-control tests</h2>
+<p class="hint">Unlike one-shot frames, these send changing RGB payloads about 8 times per second, for a limited period. First test the deterministic pulse without music; then try the phone microphone. This does <b>not</b> assume that flag 0x20 addresses individual LEDs.</p>
+<div class="row"><button class="btn" id="pulse20" disabled>12-second pulse · 0x20</button><button class="btn" id="pulse10" disabled>12-second pulse · 0x10</button></div>
+<p class="hint">For both pulse tests: lights alternate red channel level 0 ↔ 255 every 0.5 seconds, using 8 BLE writes/second. Compare whether 0x20 follows the same square wave as ordinary RGB (0x10), changes zones, or gets ignored.</p>
+<label class="label" for="streamflag">Live phone microphone frame type</label><select id="streamflag"><option value="32">Experimental music flag (0x20)</option><option value="16">Normal RGB flag (0x10) — control</option></select>
+<div class="row" style="margin-top:12px"><button class="btn primary" id="livemic" disabled>Start 20-second phone-mic stream</button><button class="btn critical" id="streamstop" disabled>Stop stream</button></div>
+<div class="row between"><span class="label">Phone input level</span><strong id="livelevel">—</strong></div><div class="bar" id="livebar" aria-label="Phone microphone level preview"></div>
+<p id="streamnotice" class="warning">Use count 30. For an isolated test, start Energetic II, turn the lamp’s internal microphone OFF, then run the pulse. If mic OFF also ends the mode, record that instead of assuming it worked.</p>
+<p class="hint">The webpage requests microphone permission only when you start the live test. It does not record, upload, or save audio. The audio may include any sound the phone microphone hears, including your voice and music played through a nearby speaker. Each stream has a hard duration limit.</p></section>
+<section class="card"><h2>5 · Pixel-count interaction (optional)</h2><p class="hint">If you see a promising section pattern, try changing the confirmed <code>0x21</code> pixel-count setting <b>while that mode is running</b>. This is not a direct pixel-address command.</p><div class="row"><button class="btn" id="px10" disabled>Count 10</button><button class="btn" id="px30" disabled>Count 30</button><button class="btn" id="px1000" disabled>Count 1000</button></div></section>
+<section class="card"><h2>7 · Controlled mode-override experiment (NEW)</h2><p class="hint">One tap sends ONE known packet. Observe the lamp before moving to the next step. These tests isolate whether 0x10 / 0x20 override the internal 0x84 effect; they do NOT claim to inject audio into 0x84. Use count 30 and no music.</p><div class="row"><button class="btn" id="isoA" disabled>A · Reset red</button><button class="btn" id="isoB" disabled>B · Start 0x84</button><button class="btn" id="isoC" disabled>C · Mic OFF</button></div><div class="row"><button class="btn primary" id="isoD" disabled>D · 0x20 black</button><button class="btn primary" id="isoE" disabled>E · 0x20 red</button><button class="btn" id="isoF" disabled>F · 0x10 black</button><button class="btn" id="isoG" disabled>G · 0x10 red</button></div><p class="warning">After each step, record the PHYSICAL result using these buttons; unlike v1.6, the observation is tied to the selected test step.</p><div class="row answers"><button class="btn" data-iso-observation="effect keeps moving">Effect keeps moving</button><button class="btn" data-iso-observation="whole lamp becomes solid color or off">Solid color / off</button><button class="btn" data-iso-observation="effect stops">Effect stops</button><button class="btn" data-iso-observation="other / uncertain">Other / uncertain</button></div><p class="hint" id="isostep">No isolation step sent yet.</p></section>
+<section class="card"><h2>8 · Section addressing investigation (NEW)</h2><p class="warning">No section-address command is confirmed for this controller. The candidate packets below are explicitly exploratory. The 0x21 command changes a count, not an LED address.</p>
+<p class="hint">First use the known working red/black controls, then test whether changing pixel count limits the illuminated portion. Record what physically changes. Restore 30 afterwards.</p>
+<div class="row"><button class="btn" id="zonebase" disabled>Reset: count 30 + red</button><button class="btn" id="zone10" disabled>Count 10 + red</button><button class="btn" id="zone1" disabled>Count 1 + red</button><button class="btn" id="zone30" disabled>Restore count 30 + red</button></div>
+<label class="label" for="zoneopcode">Candidate opcode (hex; unknown protocol)</label><select id="zoneopcode"><option value="22">0x22 (candidate)</option><option value="23">0x23 (candidate)</option><option value="24">0x24 (candidate)</option><option value="25">0x25 (candidate)</option></select>
+<label class="label" for="zoneindex">Candidate section index (0–9)</label><input type="range" min="0" max="9" value="0" id="zoneindex"><span id="zoneindextext">0</span>
+<p class="hint">Candidate frame layout: 7E 07 [opcode] [index] FF 00 00 00 EF. This layout is a hypothesis, NOT a known per-section protocol. Send only one at a time and observe; don't assume a successful write means a supported command.</p>
+<div class="code" id="zonepreview"></div><div class="row"><button class="btn" id="zoneprobe" disabled>Send candidate once</button><button class="btn" id="zoneblack" disabled>Whole lamp black (control)</button><button class="btn" id="zonered" disabled>Whole lamp red (control)</button></div>
+<div class="row answers"><button class="btn" data-zone-observation="One section changed">One section</button><button class="btn" data-zone-observation="Whole lamp changed">Whole lamp</button><button class="btn" data-zone-observation="No visible change">No change</button><button class="btn" data-zone-observation="Animation or unexpected result">Unexpected</button></div><p class="hint" id="zonelast">No section test sent yet.</p></section>
+<section class="card"><h2>9 · Captured HCI packet replay (NEW)</h2><p class="warning">These packets were observed in the uploaded Android HCI capture, but their exact meaning and target device are not proven. Send only to one connected lamp. No automatic sweeps.</p><p class="hint">Start with solid red. Choose a captured family, then send the original recorded packet. Compare one write against a short bounded replay. The paired A/B test alternates only between two values recorded in the capture, not invented opcodes.</p><label class="label" for="capturefamily">Captured command family</label><select id="capturefamily"><option value="02">7E 07 02 XX FF FF FF 00 EF</option><option value="01">7E 04 01 XX 00 FF 02 01 EF</option><option value="83">7E 06 83 0B 0E 31 01 00 EF</option><option value="ea">7E 07 EA 02 01 FF FF 00 EF</option><option value="03">7E 07 03 90 06 FF FF 00 EF</option></select><p class="hint" id="capturepreview">Captured frame preview</p><div class="row"><button class="btn primary" id="capone" disabled>Send captured packet once</button><button class="btn" id="caprepeat" disabled>Repeat same packet ×3</button><button class="btn" id="capcompare" disabled>A/B recorded values (6 writes)</button></div><div class="row answers"><button class="btn" data-cap-observation="No visible change">No change</button><button class="btn" data-cap-observation="Whole lamp changed">Whole lamp</button><button class="btn" data-cap-observation="One or more sections changed">Sections changed</button><button class="btn" data-cap-observation="Animation changed">Animation changed</button><button class="btn" data-cap-observation="Other / uncertain">Other</button></div><p class="hint" id="caplast">No captured packet sent yet.</p></section>
+<section class="card"><h2>6 · What did the lamp do?</h2><div class="row answers"><button class="btn" data-observation="Bottom-up sections changed">Bottom-up sections</button><button class="btn" data-observation="Entire lamp changed brightness or color">Whole lamp only</button><button class="btn" data-observation="Built-in pattern moving, no hold">Moving pattern</button><button class="btn" data-observation="No visible response">No response</button><button class="btn" data-observation="Different behavior">Something else</button></div>
+<div class="row" style="margin-top:14px"><button class="btn" id="restore">Restore solid red</button><button class="btn" id="copy">Copy log</button><button class="btn" id="clear">Clear log</button></div><div class="log" id="log" aria-live="polite"></div></section>
+<footer>BLE transmissions use existing documented nine-byte RGB frames. No firmware writes. Candidate opcode probes are unverified and sent only on explicit tap. Continuous tests stop after 12/20 seconds or on Stop; close the page or disconnect if needed. This is a one-lamp test harness, not the Dual / Pulse production app.</footer>
+</main><script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id), S=0xfff0,C=0xfff3,nap=ms=>new Promise(r=>setTimeout(r,ms));
+const ON=[0x7e,0x04,0x04,0x01,0x00,0x01,0xff,0,0xef], RED=[0x7e,7,5,3,255,0,0,0x10,0xef];
+const hx=bytes=>Array.from(bytes,x=>x.toString(16).toUpperCase().padStart(2,'0')).join(' ');
+let dev=null,chr=null,verified=false,redPending=false,busy=false,halt=false,lastAction='none',lastFrame='',entries=[];
+const linked=()=>Boolean(dev?.gatt?.connected&&chr);
+function log(msg){const str=`${new Date().toLocaleTimeString()}  ${msg}`;entries.push(str);if(entries.length>250)entries.shift();$('log').textContent=entries.join('\n');$('log').scrollTop=$('log').scrollHeight;}
+function message(msg){$('notice').textContent=msg;}
+function ui(){let yes=linked(),ready=yes&&verified&&!busy;
+ $('status').textContent=!yes?'Disconnected':verified?'Ready':'Connected';$('status').classList.toggle('good',yes&&verified);
+ for(let id of ['testred','confirm','eq','micon','micoff','sendmusic','sendnormal','steps','px10','px30','px1000','pulse20','pulse10','livemic','presetnormal','presetmusic','sendhex','isoA','isoB','isoC','isoD','isoE','isoF','isoG','zonebase','zone10','zone1','zone30','zoneprobe','zoneblack','zonered','capone','caprepeat','capcompare'])$(id).disabled=busy||(!yes)||(id==='confirm'?!redPending:!['testred'].includes(id)&&!verified);
+ $('connect').disabled=busy;$('restore').disabled=busy||!yes;$('disconnect').disabled=busy;$('streamstop').disabled=!busy;if(verified&&!busy)$('capcompare').disabled=capSelection().length<2;}
+const EQ=index=>[0x7e,0x05,0x03,(128+index)&255,0x04,0xff,0xff,0,0xef];
+const MIC=on=>[0x7e,0x04,0x07,on?1:0,0xff,0xff,0xff,0,0xef];
+const LEVEL=(v,flag)=>[0x7e,7,5,3,v,0,0,flag,0xef];
+const COUNT=n=>[0x7e,7,0x21,n&255,(n>>8)&255,0,0xff,0,0xef];
+function updateLevel(){let val=Number($('level').value);$('leveltext').textContent=val+' / 255';const b=$('bar');b.replaceChildren();for(let i=0;i<10;i++){const el=document.createElement('span');el.className=i<Math.ceil(val/25.5)?'active':'';b.append(el)}$('command').textContent='Music-reactive: '+hx(LEVEL(val,0x20))+'\nNormal RGB comparison: '+hx(LEVEL(val,0x10));}
+async function write(bytes,label){if(!linked())throw Error('Lamp disconnected');const buff=Uint8Array.from(bytes);try{
+ await chr.writeValueWithoutResponse(buff);
+ log(label+': Chrome accepted '+hx(buff)+' (physical result NOT verified)');lastAction=label;lastFrame=hx(buff);
+}catch(err){log('BLE WRITE FAILED '+label+': '+(err?.name||'Error')+': '+(err?.message||String(err)));verified=false;message('A GATT write failed. Experiments locked; reconnect and verify red again.');throw err;}}
+async function op(work){if(busy)return;busy=true;halt=false;ui();try{await work()}catch(e){if(e?.name!=='NotFoundError')log('Stopped: '+(e?.message||String(e)))}finally{busy=false;ui()}}
+async function connect(){if(!navigator.bluetooth){log('Web Bluetooth unavailable. Use Android Chrome over HTTPS.');return;}await op(async()=>{
+ if(dev?.gatt?.connected)dev.gatt.disconnect();dev=null;chr=null;verified=false;redPending=false;
+ const d=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'MELK-'}],optionalServices:[S]}); dev=d;
+ d.addEventListener('gattserverdisconnected',()=>{if(dev===d){chr=null;verified=false;redPending=false;ui();log('Lamp disconnected.')}});
+ const g=await d.gatt.connect();const svc=await g.getPrimaryService(S);chr=await svc.getCharacteristic(C);log('Connected '+(d.name||'MELK lamp')+'; FFF3 ready.');await nap(450);
+ await write(ON,'Known power ON');message('Connected. Tap Test red, then confirm actual lamp turns red.');
+ });}
+async function verifyRed(){await op(async()=>{redPending=false;verified=false;await write(RED,'Known red baseline');redPending=true;message('Did the entire physical lamp turn red? Confirm before testing.');});}
+async function act(label,frames){if(!verified)return;await op(async()=>{for(const [bytes,name,delay] of frames){if(halt)break;await write(bytes,name||label);if(delay)await nap(delay);} });}
+$('connect').onclick=connect;
+$('disconnect').onclick=()=>{halt=true;cleanupAudio();dev?.gatt?.disconnect();chr=null;verified=false;redPending=false;ui();log('Manual disconnect.');};
+$('testred').onclick=verifyRed;
+$('confirm').onclick=()=>{if(!linked()||!redPending)return;verified=true;redPending=false;ui();message('Lamp verified. Run the EQ and music-frame tests.');log('USER verified physical red baseline.');};
+$('mode').onchange=()=>log('Mode selected: '+$('mode').selectedOptions[0].textContent+' (not yet sent)');
+$('eq').onclick=()=>{const i=Number($('mode').value);act('EQ',[[EQ(i),'EQ mode '+$('mode').selectedOptions[0].textContent]]);};
+$('micon').onclick=()=>act('MIC on',[[MIC(true),'Internal microphone ON']]);
+$('micoff').onclick=()=>act('MIC off',[[MIC(false),'Internal microphone OFF']]);
+$('presetnormal').onclick=()=>act('Normal red preset',[[RED,'Normal red preset 0x10']]);
+$('presetmusic').onclick=()=>act('Music red preset',[[LEVEL(255,0x20),'Music red preset 0x20']]);
+$('sendhex').onclick=()=>{const raw=$('customhex').value.replace(/\s+/g,'');if(!/^(?:[0-9a-fA-F]{2})+$/.test(raw)){ $('hexnotice').textContent='Invalid HEX: use an even number of hexadecimal digits.';log('Invalid custom HEX input');return;}const bytes=raw.match(/.{2}/g).map(x=>parseInt(x,16));if(bytes.length>64){$('hexnotice').textContent='Command too long (64-byte safety limit).';return;}$('hexnotice').textContent='Sending '+bytes.length+' bytes; check physical response.';act('Custom HEX',[[bytes,'Custom HEX']]);};
+// Streaming tests deliberately use only the already tested RGB packet shape.
+// Repeated frames let us tell whether the lamp accepts *ongoing* external changes.
+let microphoneStream=null, microphoneContext=null;
+function setLiveLevel(v){$('livelevel').textContent=v+' / 255';const bar=$('livebar');bar.replaceChildren();for(let i=0;i<10;i++){const el=document.createElement('span');el.className=i<Math.ceil(v/25.5)?'active':'';bar.append(el);}}
+async function cleanupAudio(){if(microphoneStream){for(const t of microphoneStream.getTracks())t.stop();microphoneStream=null;}if(microphoneContext){await microphoneContext.close().catch(()=>{});microphoneContext=null;}}
+async function streamTest(kind,flag){if(!verified)return;await op(async()=>{
+ let analyser=null,samples=null,attempts=0,changed=0,last=-1,started=performance.now(),limit=kind==='mic'?20000:12000;
+ try{
+  if(kind==='mic'){
+   microphoneStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});
+   if(halt)return;
+   microphoneContext=new (window.AudioContext||window.webkitAudioContext)();await microphoneContext.resume();
+   analyser=microphoneContext.createAnalyser();analyser.fftSize=2048;
+   microphoneContext.createMediaStreamSource(microphoneStream).connect(analyser);
+   samples=new Uint8Array(analyser.fftSize);
+  }
+  $('streamnotice').textContent=(kind==='mic'?'Phone mic':'Square wave')+' streaming to 0x'+flag.toString(16).toUpperCase()+'. Watch the physical lamp.';
+  log('STREAM START kind='+kind+' flag=0x'+flag.toString(16)+' ~8 writes/sec, max '+limit/1000+'s');
+  let next=performance.now();
+  while(!halt&&linked()&&performance.now()-started<limit){
+   const elapsed=performance.now()-started;
+   let value=0;
+   if(kind==='pulse')value=(Math.floor(elapsed/500)%2===0)?0:255;
+   else {
+    analyser.getByteTimeDomainData(samples);
+    let sum=0;for(let i=0;i<samples.length;i++){const x=(samples[i]-128)/128;sum+=x*x;}
+    const rms=Math.sqrt(sum/samples.length);
+    value=Math.max(0,Math.min(255,Math.round(rms*1500)));
+   }
+   setLiveLevel(value);if(value!==last){changed++;last=value;}
+   await chr.writeValueWithoutResponse(Uint8Array.from(LEVEL(value,flag)));attempts++;
+   next+=125;await nap(Math.max(0,next-performance.now()));
+  }
+  log('STREAM END '+attempts+' frames; '+changed+' changes; last level '+last+'; stop='+halt);
+  $('streamnotice').textContent='Finished: '+attempts+' writes, '+changed+' level changes. What did the physical lamp do?';
+ }catch(err){log('STREAM FAILED: '+(err?.name||'Error')+': '+(err?.message||String(err)));$('streamnotice').textContent='Stream failed: '+(err?.message||String(err));}
+ finally{await cleanupAudio();setLiveLevel(0);}
+});}
+$('pulse20').onclick=()=>streamTest('pulse',0x20);
+$('pulse10').onclick=()=>streamTest('pulse',0x10);
+$('livemic').onclick=()=>streamTest('mic',Number($('streamflag').value));
+$('streamstop').onclick=()=>{halt=true;log('Stream stop requested.');};
+
+$('level').oninput=updateLevel;
+$('sendmusic').onclick=()=>{let v=Number($('level').value);act('Music frame',[[LEVEL(v,0x20),'Music-reactive frame level '+v]]);};
+$('sendnormal').onclick=()=>{let v=Number($('level').value);act('Normal frame',[[LEVEL(v,0x10),'Normal RGB comparison level '+v]]);};
+$('steps').onclick=()=>act('Music ramp',[[LEVEL(0,0x20),'Music ramp 0',1200],[LEVEL(85,0x20),'Music ramp 85',1200],[LEVEL(170,0x20),'Music ramp 170',1200],[LEVEL(255,0x20),'Music ramp 255',1200],[LEVEL(0,0x20),'Music ramp 0 end']]);
+$('stop').onclick=()=>{halt=true;log('Stop requested (current BLE write completes first).');};
+for(const n of [10,30,1000])$('px'+n).onclick=()=>act('Pixel setting',[[COUNT(n),'Pixel Setting '+n]]);
+$('restore').onclick=()=>op(async()=>{await write(RED,'RESTORE entire lamp red');log('Restored normal color mode.');});
+for(const b of document.querySelectorAll('[data-observation]'))b.onclick=()=>{log('USER OBSERVED after ['+lastAction+'] '+b.dataset.observation+'; frame '+lastFrame);};
+let isolationStep='none';
+const isolationTests={
+ isoA:['A Reset red',RED],
+ isoB:['B Start 0x84',EQ(4)],
+ isoC:['C Mic OFF',MIC(false)],
+ isoD:['D 0x20 black',LEVEL(0,0x20)],
+ isoE:['E 0x20 red',LEVEL(255,0x20)],
+ isoF:['F 0x10 black',LEVEL(0,0x10)],
+ isoG:['G 0x10 red',LEVEL(255,0x10)]
+};
+for(const [id,[label,packet]] of Object.entries(isolationTests))$(id).onclick=()=>{
+ isolationStep=label;$('isostep').textContent='Last isolation step: '+label+' — record what physically happened.';
+ act('Isolation step',[[packet,'ISOLATION '+label]]);
+};
+for(const b of document.querySelectorAll('[data-iso-observation]'))b.onclick=()=>log('ISOLATION OBSERVATION ['+isolationStep+']: '+b.dataset.isoObservation);
+
+let zoneLast='none';
+function zonePacket(){const op=parseInt($('zoneopcode').value,16),idx=Number($('zoneindex').value);return [0x7e,7,op,idx,255,0,0,0,0xef];}
+function zonePreview(){$('zoneindextext').textContent=$('zoneindex').value;$('zonepreview').textContent=hx(zonePacket());}
+$('zoneopcode').onchange=zonePreview;$('zoneindex').oninput=zonePreview;
+function zoneRun(label,frames){zoneLast=label;$('zonelast').textContent='Last section test: '+label;act('Section test',frames);}
+$('zonebase').onclick=()=>zoneRun('Count 30 + red',[[COUNT(30),'ZONE count 30'],[RED,'ZONE red']]);
+$('zone10').onclick=()=>zoneRun('Count 10 + red',[[COUNT(10),'ZONE count 10'],[RED,'ZONE red']]);
+$('zone1').onclick=()=>zoneRun('Count 1 + red',[[COUNT(1),'ZONE count 1'],[RED,'ZONE red']]);
+$('zone30').onclick=()=>zoneRun('Restore count 30 + red',[[COUNT(30),'ZONE restore count 30'],[RED,'ZONE red']]);
+$('zoneprobe').onclick=()=>zoneRun('Candidate '+hx(zonePacket()),[[zonePacket(),'ZONE UNVERIFIED candidate']]);
+$('zoneblack').onclick=()=>zoneRun('Whole black control',[[LEVEL(0,0x10),'ZONE whole black control']]);
+$('zonered').onclick=()=>zoneRun('Whole red control',[[RED,'ZONE whole red control']]);
+for(const b of document.querySelectorAll('[data-zone-observation]'))b.onclick=()=>log('ZONE OBSERVATION ['+zoneLast+']: '+b.dataset.zoneObservation);
+zonePreview();
+
+const capturedPackets={'02':[[126,7,2,90,255,255,255,0,239],[126,7,2,86,255,255,255,0,239]],'01':[[126,4,1,91,0,255,2,1,239],[126,4,1,92,0,255,2,1,239]],'83':[[126,6,131,11,14,49,1,0,239],[126,6,131,11,38,15,1,0,239]],'ea':[[126,7,234,2,1,255,255,0,239]],'03':[[126,7,3,1,6,255,255,0,239],[126,7,3,143,6,255,255,0,239]]};
+let capLast='none';
+function capSelection(){return capturedPackets[$('capturefamily').value]||[];}
+function capPreview(){const arr=capSelection();$('capturepreview').textContent='Recorded sample A: '+hx(arr[0])+(arr.length>1?' | Recorded sample B: '+hx(arr[1]):' | Only one unique sample used');$('capcompare').disabled=!verified||busy||arr.length<2;}
+$('capturefamily').onchange=capPreview;
+async function capSend(kind){if(!verified)return;const packets=capSelection();const fam=$('capturefamily').value;let frames=[];
+ if(kind==='once')frames=[[packets[0],'CAPTURE '+fam+' once']];
+ if(kind==='repeat')frames=Array.from({length:3},(_,i)=>[packets[0],'CAPTURE '+fam+' repeat '+(i+1),250]);
+ if(kind==='compare'&&packets.length>1)frames=Array.from({length:6},(_,i)=>[packets[i%2],'CAPTURE '+fam+' A/B '+(i+1),400]);
+ capLast=fam+' '+kind;$('caplast').textContent='Last captured test: '+capLast;
+ await act('Captured HCI replay',frames);
+}
+$('capone').onclick=()=>capSend('once');$('caprepeat').onclick=()=>capSend('repeat');$('capcompare').onclick=()=>capSend('compare');
+for(const b of document.querySelectorAll('[data-cap-observation]'))b.onclick=()=>log('CAPTURE OBSERVATION ['+capLast+']: '+b.dataset.capObservation);
+capPreview();
+
+$('copy').onclick=async()=>{const s='MELK Spectrum Lab v1.9\n'+entries.join('\n');try{await navigator.clipboard.writeText(s);log('Log copied.');}catch{const el=document.createElement('textarea');el.value=s;document.body.append(el);el.select();document.execCommand('copy');el.remove();log('Copy attempted.');}};
+$('clear').onclick=()=>{entries=[];log('Log cleared.');};
+updateLevel();setLiveLevel(0);ui();log('Spectrum Lab v1.9 ready. No commands sent until connected.');
+})();
+</script></body></html>
