@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MELK Scanner v8 — Color-Primed Presets</title>
+<style>
+:root{color-scheme:dark;font:15px system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0c111c;color:#e9eef7}
+*{box-sizing:border-box}body{max-width:1020px;margin:0 auto;padding:18px 13px 48px}
+h1{font-size:1.55rem;margin:3px 0}h2{font-size:1.09rem;margin:0 0 10px}p{line-height:1.4}
+small,.hint{font-size:.84rem;color:#b3bfd1}strong{color:#fff}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:9px;justify-content:space-between;margin-bottom:12px}
+.version{background:#254568;color:#c4e4ff;padding:5px 8px;border-radius:6px;font-weight:650}
+section{background:#172235;border:1px solid #2b3b53;border-radius:13px;padding:16px;margin-bottom:13px}
+button,input,select,textarea{font:inherit;color:#f1f6ff;background:#26374e;border:1px solid #516780;border-radius:8px;padding:10px}
+button{cursor:pointer;touch-action:manipulation;font-weight:600}button:hover:not(:disabled){background:#365575}
+button:disabled{opacity:.5;cursor:default}input[type=checkbox]{width:17px;height:17px;accent-color:#66b7ff;padding:0;margin:0;cursor:pointer}
+input[type=text],textarea{width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.015em}
+textarea{resize:vertical;min-height:90px;line-height:1.5}input[type=number]{width:112px}select{max-width:100%}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.controls button{margin:0}
+.primary{background:#126b9c;border-color:#3198d0}.danger{background:#a22134;border-color:#d35f69;font-size:1.06rem;padding:12px 20px;color:white}
+.secondary{background:#213149}.quiet{background:#213149;border-color:#394960}
+.status{margin-top:11px;padding:9px 11px;border-radius:8px;background:#0f1a2b;color:#c4d6eb;min-height:39px}
+.status[data-level="warn"]{color:#ffda9e;background:#382719}.status[data-level="bad"]{color:#ffbec5;background:#401c28}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:13px}
+label.title{display:block;font-weight:600;margin-bottom:6px}.mono,code{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-word}
+.bytegrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:11px 0}
+.byte{display:flex;gap:8px;align-items:center;padding:11px 9px;border:1px solid #3a4a62;border-radius:8px;background:#111d2e;min-width:0}
+.byte.is-selected{border-color:#69baff;background:#18344b}.byte span{min-width:0;font-size:.89rem}.byte code{font-size:.99rem;color:#c8e6ff}
+.flexline{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0 4px}
+.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0}
+.metric{border-radius:10px;background:#111c2c;border:1px solid #30425b;padding:10px}.metric .value{font-size:1.24rem;font-weight:700;overflow-wrap:anywhere}.metric .lbl{color:#adc1d9;font-size:.81rem;margin-bottom:4px}
+#preview{display:block;font-size:1.13rem;padding:11px;background:#101827;border:1px solid #364760;border-radius:8px;overflow-wrap:anywhere}
+#log{max-height:310px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#0e1521;border:1px solid #39465a;border-radius:8px;padding:11px;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace}
+.checkline{display:flex;align-items:center;gap:9px;font-size:.9rem;margin-top:11px}
+.progressbar{height:9px;background:#0d1521;border-radius:9px;overflow:hidden;margin-top:9px}.fill{width:0;height:100%;background:#3ba5ed;transition:width .1s}
+@media(min-width:700px){.bytegrid{grid-template-columns:repeat(9,minmax(0,1fr))}.byte{flex-direction:column;gap:6px}.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:370px){.bytegrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<header><div><h1>MELK Command Scanner <span class="version">v8 — COLOR PRIMING FIX</span></h1><small>TRUE COMBINATION SCAN · pick any of 9 bytes · 30 samples/byte</small></div><span class="mono" id="clockStatus">Ready</span></header>
+
+<section>
+<h2>1 · Connect</h2>
+<div class="controls"><button id="connect" class="primary">Connect BLE lamp</button><button id="disconnect">Disconnect</button></div>
+<div class="status" id="connection">Disconnected</div>
+<p class="hint">Chrome on Android or desktop, served over HTTPS or localhost. BLE service <code>FFF0</code>, write characteristic <code>FFF3</code>. Browser permissions are requested when you connect.</p>
+</section>
+
+<section>
+<h2>2 · Verified command formats and 9-byte packet</h2>
+<div class="fields">
+<div><label class="title" for="preset">Known state</label><select id="preset" class="config">
+<option value="animation">31 31 — running animation</option>
+<option value="frozen">31 31 — frozen frame</option>
+<option value="red">Solid red</option>
+<option value="blue">Solid blue</option>
+<option value="white">Solid white — RGB FF FF FF</option>
+<option value="recall">71 02 — Recall last color (observed)</option>
+<option value="favorite">Favorite (03 54)</option>
+<option value="custom">Custom</option>
+</select></div>
+<div><label class="title" for="baseline">Packet baseline (editable)</label><input id="baseline" class="config" type="text" spellcheck="false" value="7E 07 31 31 FF 00 00 10 EF"></div>
+</div>
+<div class="controls" style="margin:11px 0"><button id="applyPreset" class="primary">▶ APPLY PRESET TO LAMP</button><span class="hint" id="presetStatus">Choosing a preset sends its command sequence when connected. Press here to reapply.</span></div>
+<p class="hint">The nine positions below refer to this packet. The default baseline follows the earlier <code>7E 07 31 31 FF 00 00 10 EF</code> scanning format. Selected bytes are replaced; unchecked bytes stay unchanged.</p>
+<div class="flexline"><strong>Select bytes to vary</strong><button class="quiet config" id="recommended">5–8 (default)</button><button class="quiet config" id="allBytes">All 9</button><button class="quiet config" id="clearBytes">Clear</button></div>
+<div id="bytegrid" class="bytegrid" aria-label="Nine packet byte positions"></div>
+</section>
+
+<section>
+<h2>3 · REAL combination scan (not the old 0–65535 index scanner)</h2>
+<div class="fields">
+<div><label class="title" for="depth">Bytes varied together</label><select id="depth" class="config"></select><p class="hint">Pairs = every pairing of selected positions; triples = every group of three. Remaining positions keep baseline values.</p></div>
+<div><label class="title" for="delay">Time between candidates</label><select id="delay">
+<option value="50">50 ms</option><option value="75">75 ms</option><option value="100">100 ms</option><option value="150" selected>150 ms</option><option value="250">250 ms</option><option value="500">500 ms</option><option value="1000">1 second</option><option value="2000">2 seconds</option>
+</select><p class="hint">BLE latency, setup commands and reconnections add to the estimate.</p></div>
+</div>
+<p class="hint">Every selected position uses exactly 30 values: <code>00–09</code>, <code>7B–84</code>, and <code>F6–FF</code>. Combinations are generated as needed; no gigantic list is loaded.</p>
+<div class="metrics">
+<div class="metric"><div class="lbl">Total candidates</div><div class="value" id="total">—</div></div>
+<div class="metric"><div class="lbl">Estimated scan delay</div><div class="value" id="estimate">—</div></div>
+<div class="metric"><div class="lbl">Next candidate number</div><div class="value" id="position">—</div></div>
+<div class="metric"><div class="lbl">Scanned this run</div><div class="value" id="scanned">0</div></div>
+</div>
+<label class="title">Next packet preview</label><code id="preview">—</code>
+<p id="positionDetails" class="hint">—</p>
+<div class="progressbar" aria-label="Scan progress"><div class="fill" id="fill"></div></div>
+<div class="flexline"><label for="jump">Jump to candidate #</label><input id="jump" type="number" min="1" step="1" value="1"><button id="go">Go</button><button id="previous">◀ Previous</button><button id="next">Next ▶</button></div>
+<div class="controls" style="margin-top:14px"><button id="start" class="primary">▶ Start / Resume</button><button id="stop" class="danger" disabled>■ STOP NOW</button><button id="restart">Reset to #1</button></div>
+<div class="status" id="scanStatus">Ready to scan. Stop preserves the next candidate so you can resume.</div>
+</section>
+
+<section>
+<h2>4 · Optional state preparation</h2>
+<div class="fields">
+<div><label class="title" for="setupMode">Send preparation packets</label><select id="setupMode" class="config"><option value="once">Once at the start of each run</option><option value="each">Before EVERY tested combination</option><option value="off">Never (scan only)</option></select></div>
+<div><label class="title" for="setupDelay">Delay after each setup packet</label><select id="setupDelay" class="config"><option value="50">50 ms</option><option value="100">100 ms</option><option value="250" selected>250 ms</option><option value="500">500 ms</option><option value="1000">1 second</option></select></div>
+</div>
+<label class="title" for="setup">Preparation packets (one full 9-byte command per line)</label>
+<textarea id="setup" class="config" spellcheck="false"></textarea>
+<p class="hint">The previously observed <code>31 31</code> startup sequence is <strong>solid blue → 31 31 → solid red → 22 00</strong>. The color packet between <code>31 31</code> and <code>22 00</code> is required by your tests. The frozen preset then sends <code>31 00</code>. The <code>03 80 01</code> pause command belongs to a separate format and is not substituted here. “Before every” provides independent tests but adds extra BLE writes. Stop interrupts this sequence too.</p>
+</section>
+
+<section>
+<h2>5 · Manual commands and discoveries</h2>
+<label class="title" for="manual">Manual packet (stops scanner before writing)</label><input id="manual" type="text" spellcheck="false" value="7E 07 05 03 FF 00 00 10 EF">
+<div class="controls" style="margin-top:10px"><button id="send">Send packet</button><button id="redButton">Solid red</button><button id="blueButton">Solid blue</button><button id="power">Power on</button></div>
+<div class="flexline"><label for="note">Discovery note</label><input id="note" type="text" style="flex:1;min-width:190px" placeholder="e.g. cycling patterns / disconnected"><button id="bookmark">★ Bookmark last scan packet</button></div>
+<div class="controls"><button id="export">Export CSV (writes + bookmarks)</button><button id="clearLog">Clear write history</button></div>
+<p class="hint">Bookmarks and the scan checkpoint persist in this browser. Write history stays in memory and is limited to the last 50,000 entries; export before reloading if you want the full record. A disconnect stops scanning and reports the attempted packet.</p>
+</section>
+
+<section>
+<h2>Activity</h2>
+<div id="log" aria-live="polite">Ready. Connect a lamp, select positions, then start.\n</div>
+</section>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const SAMPLE = [...Array.from({length:10},(_,i)=>i),...Array.from({length:10},(_,i)=>0x7b+i),...Array.from({length:10},(_,i)=>0xf6+i)];
+const PACKETS = {
+ animation:{base:'7E 07 31 31 FF 00 00 10 EF',setup:'7E 07 05 03 00 00 FF 10 EF\n7E 07 31 31 FF 00 00 10 EF\n7E 07 05 03 FF 00 00 10 EF\n7E 07 22 00 FF 00 00 10 EF',mode:'once'},
+ frozen:{base:'7E 07 31 31 FF 00 00 10 EF',setup:'7E 07 05 03 00 00 FF 10 EF\n7E 07 31 31 FF 00 00 10 EF\n7E 07 05 03 FF 00 00 10 EF\n7E 07 22 00 FF 00 00 10 EF\n7E 07 31 00 FF 00 00 10 EF',mode:'each'},
+ red:{base:'7E 07 05 03 FF 00 00 10 EF',setup:'7E 07 05 03 FF 00 00 10 EF',mode:'once'},
+ blue:{base:'7E 07 05 03 00 00 FF 10 EF',setup:'7E 07 05 03 00 00 FF 10 EF',mode:'once'},
+ white:{base:'7E 07 05 03 FF FF FF 10 EF',setup:'7E 07 05 03 FF FF FF 10 EF',mode:'once'},
+ recall:{base:'7E 07 71 02 FF 00 00 10 EF',setup:'7E 07 71 02 FF 00 00 10 EF',mode:'once'},
+ favorite:{base:'7E 07 03 54 FF 00 00 10 EF',setup:'7E 07 03 54 FF 00 00 10 EF',mode:'once'}
+};
+const SAVEKEY='melk-scanner-v8-checkpoint';
+const LIMIT=50000;
+let device=null,characteristic=null,scanTask=null,writeTail=Promise.resolve(),presetController=null;
+let cursor=0,runScanned=0,totalWritten=0,errors=0,dropped=0;
+let lastAttempt=null,lastScan=null,logs=[],bookmarks=[];
+const toHex=bytes=>Array.from(bytes,b=>b.toString(16).toUpperCase().padStart(2,'0')).join(' ');
+function parsePacket(text){const s=text.replace(/0x/gi,'').replace(/[\s,;:-]/g,'');if(!/^[A-F\d]{18}$/i.test(s))throw Error('Packet must contain exactly 9 hexadecimal bytes');return s.match(/../g).map(x=>parseInt(x,16));}
+function setupPackets(){const lines=$('setup').value.split(/\r?\n/).map(s=>s.trim()).filter(s=>s && !s.startsWith('#'));return lines.map(parsePacket);}
+function status(message,level=''){const el=$('scanStatus');el.textContent=message;el.dataset.level=level;}
+function log(message){const s=new Date().toLocaleTimeString()+'  '+message;const el=$('log');el.textContent=s+'\n'+el.textContent.slice(0,12000);}
+function formatNum(n){return Number.isFinite(n)?n.toLocaleString('en-US'):'—';}
+function duration(ms){let s=Math.floor(ms/1000);if(!Number.isFinite(s))return '—';if(s<60)return s+' sec';let m=Math.floor(s/60),h=Math.floor(m/60),d=Math.floor(h/24),y=Math.floor(d/365.25);if(y)return '~'+y.toLocaleString()+' years';if(d)return d+'d '+(h%24)+'h';if(h)return h+'h '+(m%60)+'m';return m+'m '+(s%60)+'s';}
+function combinations(a,k){let out=[];function build(from,prefix){if(prefix.length===k){out.push([...prefix]);return}for(let i=from;i<=a.length-(k-prefix.length);i++)build(i+1,[...prefix,a[i]]);}build(0,[]);return out;}
+function selected(){return Array.from(document.querySelectorAll('#bytegrid input[type="checkbox"]')).filter(el=>el.checked).map(el=>Number(el.dataset.pos));}
+function getPlan(){const baseline=parsePacket($('baseline').value),positions=selected(),k=Number($('depth').value);if(!positions.length)throw Error('Select at least one byte');if(!Number.isInteger(k)||k<1||k>positions.length)throw Error('Choose a valid combination size');const groups=combinations(positions,k),groupSize=30**k,total=groups.length*groupSize;if(!Number.isSafeInteger(total))throw Error('Scan is too large for precise indexing');return {baseline,positions,k,groups,groupSize,total};}
+function packetAt(plan,index){if(!Number.isSafeInteger(index)||index<0||index>=plan.total)throw Error('Candidate outside scan range');const gi=Math.floor(index/plan.groupSize),positions=plan.groups[gi];let rem=index%plan.groupSize;const bytes=plan.baseline.slice(),values=new Array(plan.k);for(let j=plan.k-1;j>=0;j--){const digit=rem%30;rem=Math.floor(rem/30);values[j]=SAMPLE[digit];bytes[positions[j]]=values[j];}return {bytes,positions,values,ordinal:index};}
+function writeHistory(entry){logs.push(entry);if(logs.length>LIMIT){logs.shift();dropped++;}}
+function persist(){try{localStorage.setItem(SAVEKEY,JSON.stringify({cursor,preset:$('preset').value,baseline:$('baseline').value,depth:$('depth').value,selected:selected(),delay:$('delay').value,setup:$('setup').value,setupMode:$('setupMode').value,setupDelay:$('setupDelay').value,bookmarks:bookmarks.slice(-300),totalWritten,errors}));}catch(e){/* storage may be disabled */}}
+function refreshDepth(prefer){const n=selected().length,s=$('depth'),old=Number(prefer||s.value||2);s.innerHTML='';for(let k=1;k<=n;k++){const opt=document.createElement('option');opt.value=k;opt.textContent=k===1?'1 — Singles':k===2?'2 — Pairs':k===3?'3 — Triples':k+' — '+k+'-byte groups';s.appendChild(opt);}if(n){s.value=String(Math.min(n,Math.max(1,old)));}}
+function refreshBytes(){let bytes;try{bytes=parsePacket($('baseline').value)}catch(e){bytes=null;}document.querySelectorAll('.byte').forEach((box,i)=>{const cb=box.querySelector('input');box.classList.toggle('is-selected',cb.checked);box.querySelector('code').textContent=bytes?bytes[i].toString(16).padStart(2,'0').toUpperCase():'??';});}
+function refreshPreview(){let plan;try{plan=getPlan();$('total').textContent=formatNum(plan.total);$('estimate').textContent=duration(plan.total*Number($('delay').value));cursor=Math.max(0,Math.min(cursor,plan.total));$('position').textContent=cursor>=plan.total?'Done':formatNum(cursor+1);$('jump').max=String(plan.total);$('jump').value=String(Math.min(cursor+1,plan.total));$('fill').style.width=(plan.total?cursor/plan.total*100:0)+'%';if(cursor<plan.total){const p=packetAt(plan,cursor);$('preview').textContent=toHex(p.bytes);$('positionDetails').textContent='Changing byte(s) '+p.positions.map(i=>i+1).join(', ')+' to '+p.values.map(v=>v.toString(16).padStart(2,'0').toUpperCase()).join(', ')+' · '+formatNum(plan.groups.length)+' position group(s)';}else{$('preview').textContent='— Scan completed —';$('positionDetails').textContent='Reset to start another pass.';}}catch(e){$('total').textContent='—';$('estimate').textContent='—';$('position').textContent='—';$('preview').textContent='—';$('positionDetails').textContent=e.message;}
+$('scanned').textContent=formatNum(runScanned);$('clockStatus').textContent=scanTask?'SCANNING':characteristic?'CONNECTED':'READY';
+const busy=!!scanTask,applying=!!presetController;document.querySelectorAll('.config').forEach(el=>el.disabled=busy);$('applyPreset').disabled=busy||applying||!characteristic;$('start').disabled=busy||applying||!characteristic;$('stop').disabled=!busy&&!applying;$('go').disabled=busy;$('previous').disabled=busy;$('next').disabled=busy;$('restart').disabled=busy;$('jump').disabled=busy;
+}
+function changedSettings(){if(scanTask)return;cursor=0;runScanned=0;refreshBytes();refreshDepth();refreshPreview();persist();}
+function loadPreset(name){const p=PACKETS[name];if(p){$('baseline').value=p.base;$('setup').value=p.setup;$('setupMode').value=p.mode;}else if(name==='custom'){$('setupMode').value='off';$('setup').value='';}changedSettings();}
+function setSelected(arr){document.querySelectorAll('#bytegrid input').forEach(el=>el.checked=arr.includes(Number(el.dataset.pos)));changedSettings();}
+function buildByteGrid(){const grid=$('bytegrid');for(let i=0;i<9;i++){const label=document.createElement('label');label.className='byte';const cb=document.createElement('input');cb.type='checkbox';cb.className='config';cb.dataset.pos=i;cb.checked=[4,5,6,7].includes(i);const title=document.createElement('span');title.textContent='Byte '+(i+1);const value=document.createElement('code');label.append(cb,title,value);grid.appendChild(label);cb.addEventListener('change',changedSettings);}refreshDepth(2);refreshBytes();}
+function sleep(ms,signal){return new Promise(resolve=>{if(signal?.aborted)return resolve(false);if(ms<=0)return resolve(true);let done=false;const finish=ok=>{if(done)return;done=true;clearTimeout(timer);signal?.removeEventListener('abort',abort);resolve(ok)};const abort=()=>finish(false);const timer=setTimeout(()=>finish(!signal?.aborted),ms);signal?.addEventListener('abort',abort,{once:true});});}
+// Serialized BLE writes. Stop cancels future writes; it cannot undo a packet already inside the browser's BLE stack.
+async function writeOne(bytes,kind,token=null,ordinal='',positions=''){
+const command=toHex(bytes);lastAttempt={packet:command,ordinal,kind};
+const pending=writeTail.then(async()=>{if(token?.signal.aborted)throw Error('Scan cancelled');if(!characteristic||!device?.gatt?.connected)throw Error('Lamp disconnected');const c=characteristic;const raw=new Uint8Array(bytes);if(typeof c.writeValueWithoutResponse==='function')await c.writeValueWithoutResponse(raw);else await c.writeValue(raw);});
+writeTail=pending.catch(()=>{});
+await pending;
+totalWritten++;
+writeHistory({kind,ordinal,positions,time:new Date().toISOString(),packet:command});
+}
+async function prepSequence(commands,mode,token){if(mode==='off')return;for(const b of commands){if(token.signal.aborted)return;await writeOne(b,'setup',token);if(token.signal.aborted)return;await sleep(Number($('setupDelay').value),token.signal);}}
+function stopScan(reason='STOP requested'){
+  const task=scanTask, preset=presetController;
+  if(!task && !preset)return Promise.resolve();
+  if(task && !task.signal.aborted){task.reason=reason;task.controller.abort();}
+  if(preset && !preset.signal.aborted)preset.abort();
+  status('STOP requested — no more packets will be queued.','warn');
+  log(reason+(task?' at next candidate #'+formatNum(cursor+1):' during preset setup'));
+  persist();refreshPreview();
+  return task?.promise||Promise.resolve();
+}
+async function scanLoop(task){let failed=false,finished=false;const plan=task.plan;try{
+if(task.mode==='once')await prepSequence(task.prep,'once',task);
+while(!task.signal.aborted && cursor<plan.total){
+if(task.mode==='each')await prepSequence(task.prep,'each',task);
+if(task.signal.aborted)break;
+const p=packetAt(plan,cursor);
+task.attempt=p;
+await writeOne(p.bytes,'scan',task,p.ordinal+1,p.positions.map(i=>i+1).join('+'));
+lastScan={...p,packet:toHex(p.bytes),time:new Date().toISOString()};
+cursor++;runScanned++;
+if(runScanned%10===0)persist();
+refreshPreview();
+if(task.signal.aborted)break;
+if(cursor<plan.total){const ok=await sleep(Number($('delay').value),task.signal);if(!ok)break;}
+}
+finished=!task.signal.aborted && cursor===plan.total;
+}catch(e){failed=true;errors++;task.controller.abort();const info=task.attempt?('#'+formatNum(task.attempt.ordinal+1)+' '+toHex(task.attempt.bytes)):(lastAttempt?.packet||'setup');log('WRITE FAILED at '+info+' — '+e.message);status('Write failed at '+info+'. Reconnect and resume when ready. '+e.message,'bad');}
+finally{
+if(scanTask===task)scanTask=null;
+persist();refreshPreview();
+if(finished){status('Finished all '+formatNum(plan.total)+' combinations.');log('Scan complete.');}
+else if(!failed){status((task.reason||'Scan stopped')+'. Next candidate #'+formatNum(cursor+1)+'. Use Start / Resume to continue.','warn');log('Scan stopped; checkpoint saved at #'+formatNum(cursor+1));}
+}
+}
+async function applyPresetNow(){
+  // Cancel any previous preset and stop the scanner before sending new setup packets.
+  const priorStop=stopScan('Changing/applying preset');
+  const controller=new AbortController();
+  presetController=controller;
+  const signal=controller.signal, name=$('preset').value;
+  try{
+    if(!characteristic)throw Error('Connect the lamp first');
+    const packets=setupPackets();
+    const sends=packets.length?packets:[parsePacket($('baseline').value)];
+    refreshPreview();
+    await priorStop;
+    if(signal.aborted)return;
+    $('presetStatus').textContent='Sending '+sends.length+' preset command(s)…';
+    for(let i=0;i<sends.length;i++){
+      if(signal.aborted)break;
+      await writeOne(sends[i],'preset '+name,controller);
+      if(signal.aborted)break;
+      if(i+1<sends.length && !await sleep(Number($('setupDelay').value),signal))break;
+    }
+    if(signal.aborted){log('Preset '+name+' cancelled');return;}
+    $('presetStatus').textContent='Sent '+sends.length+' packet(s): '+sends.map(toHex).join(' → ');
+    status('Preset sent. Inspect the physical lamp to confirm its behavior.');
+    log('Preset '+name+' sent: '+sends.map(toHex).join('  →  '));
+  }catch(e){
+    if(!signal.aborted){errors++;status('Preset failed: '+e.message,'bad');$('presetStatus').textContent='Preset error: '+e.message;log('PRESET FAILED: '+e.message);}
+  }finally{
+    if(presetController===controller)presetController=null;
+    refreshPreview();
+  }
+}
+function setConnection(text){$('connection').textContent=text;refreshPreview();}
+function onLost(d){if(device!==d)return;stopScan('BLE disconnected');characteristic=null;setConnection('Disconnected');log('Lamp disconnected. Last attempted packet: '+(lastAttempt?.packet||'—'));}
+$('connect').onclick=async()=>{
+const pendingStop=stopScan('Connecting to another lamp');
+try{
+if(!navigator.bluetooth)throw Error('Web Bluetooth unavailable. Use Chrome over HTTPS/localhost.');
+const d=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[0xfff0]});
+await pendingStop;
+if(device && device!==d && device.gatt.connected)device.gatt.disconnect();
+device=d;
+d.addEventListener('gattserverdisconnected',()=>onLost(d));
+const server=await d.gatt.connect();
+characteristic=await(await server.getPrimaryService(0xfff0)).getCharacteristic(0xfff3);
+setConnection('Connected to '+(d.name||'BLE lamp'));
+log('Connected to '+(d.name||'BLE lamp'));
+}catch(e){log('Connection error: '+e.message);if(!characteristic)setConnection('Not connected — '+e.message);}
+};
+$('disconnect').onclick=()=>{stopScan('Disconnect requested');if(device?.gatt?.connected)device.gatt.disconnect();characteristic=null;setConnection('Disconnected');};
+$('start').onclick=()=>{
+if(scanTask)return;
+if(!characteristic){status('Connect the lamp first.','bad');return;}
+try{
+const plan=getPlan(),prep=$('setupMode').value==='off'?[]:setupPackets();
+if(cursor>=plan.total){status('Reached the end. Use Reset to #1.','warn');return;}
+const remaining=plan.total-cursor;
+if(remaining>50000 && !confirm('This scan has '+formatNum(remaining)+' remaining combinations. It may take a very long time, cause BLE disconnects, or change device state. Start anyway?'))return;
+const controller=new AbortController(),task={controller,signal:controller.signal,promise:null,reason:'',plan,prep,mode:$('setupMode').value,attempt:null};
+scanTask=task;runScanned=0;status('Scanning — next candidate #'+formatNum(cursor+1));log('Started: '+formatNum(remaining)+' candidates, '+plan.k+' bytes at once, selected '+plan.positions.map(i=>i+1).join(', '));
+refreshPreview();persist();task.promise=scanLoop(task);
+}catch(e){status(e.message,'bad');log('Cannot start: '+e.message);}
+};
+$('stop').onclick=()=>{void stopScan('STOP button pressed');};
+$('restart').onclick=()=>{if(scanTask)return;cursor=0;runScanned=0;status('Reset to candidate #1');refreshPreview();persist();};
+$('previous').onclick=()=>{if(scanTask)return;cursor=Math.max(0,cursor-1);refreshPreview();persist();};
+$('next').onclick=()=>{if(scanTask)return;try{cursor=Math.min(getPlan().total,cursor+1);refreshPreview();persist();}catch(e){status(e.message,'bad');}};
+$('go').onclick=()=>{if(scanTask)return;try{const n=Number($('jump').value),plan=getPlan();if(!Number.isSafeInteger(n)||n<1||n>plan.total)throw Error('Jump must be within 1–'+plan.total);cursor=n-1;refreshPreview();persist();}catch(e){status(e.message,'bad');}};
+$('bookmark').onclick=()=>{if(!lastScan){status('No scan packet to bookmark yet.','warn');return;}const mark={time:new Date().toISOString(),ordinal:lastScan.ordinal+1,positions:lastScan.positions.map(i=>i+1).join('+'),packet:lastScan.packet,note:$('note').value.trim()};bookmarks.push(mark);$('note').value='';persist();log('Bookmarked #'+mark.ordinal+': '+mark.packet+(mark.note?' — '+mark.note:''));};
+async function manual(packet,label){const stopped=stopScan('Manual command requested');try{const bytes=parsePacket(packet);await stopped;await writeOne(bytes,label);log(label+': '+toHex(bytes));$('manual').value=toHex(bytes);refreshPreview();}catch(e){errors++;status('Manual write failed: '+e.message,'bad');log('Manual error: '+e.message);}}
+$('send').onclick=()=>manual($('manual').value,'manual');
+$('redButton').onclick=()=>manual(PACKETS.red.base,'red');
+$('blueButton').onclick=()=>manual(PACKETS.blue.base,'blue');
+$('power').onclick=()=>manual('7E 04 04 01 00 01 FF 00 EF','power');
+$('export').onclick=()=>{const rows=[['type','candidate_number','positions','timestamp','packet','note'],...logs.map(x=>[x.kind,x.ordinal,x.positions,x.time,x.packet,'']),...bookmarks.map(x=>['bookmark',x.ordinal,x.positions,x.time,x.packet,x.note])];const csv=rows.map(row=>row.map(x=>'"'+String(x??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='melk-v8-log-'+new Date().toISOString().slice(0,19).replace(/:/g,'-')+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);log('Exported '+logs.length+' writes and '+bookmarks.length+' bookmarks'+(dropped?' ('+dropped+' oldest writes omitted)':''));};
+$('clearLog').onclick=()=>{if(!confirm('Clear in-memory write history? Bookmarks and checkpoint will remain.'))return;logs=[];dropped=0;log('Write history cleared.');};
+$('preset').addEventListener('change',()=>{loadPreset($('preset').value);if(characteristic)void applyPresetNow();else $('presetStatus').textContent='Preset loaded. Connect a lamp, then press APPLY PRESET TO LAMP.';});
+$('applyPreset').onclick=()=>{void applyPresetNow();};
+$('recommended').onclick=()=>setSelected([4,5,6,7]);$('allBytes').onclick=()=>setSelected([0,1,2,3,4,5,6,7,8]);$('clearBytes').onclick=()=>setSelected([]);
+for(const id of ['baseline','depth','setup','setupMode','setupDelay']){$(id).addEventListener('change',changedSettings);}
+$('delay').addEventListener('change',()=>{refreshPreview();persist();});
+function restore(){try{const s=JSON.parse(localStorage.getItem(SAVEKEY)||'null');if(!s)return false;
+$('preset').value=s.preset||'custom';$('baseline').value=s.baseline||PACKETS.animation.base;
+$('setup').value=s.setup??'';$('setupMode').value=s.setupMode||'once';$('setupDelay').value=s.setupDelay||'250';$('delay').value=s.delay||'150';
+if(Array.isArray(s.selected))document.querySelectorAll('#bytegrid input').forEach(el=>el.checked=s.selected.includes(Number(el.dataset.pos)));
+refreshDepth(Number(s.depth)||2);cursor=Number.isSafeInteger(s.cursor)&&s.cursor>=0?s.cursor:0;bookmarks=Array.isArray(s.bookmarks)?s.bookmarks:[];totalWritten=Number(s.totalWritten)||0;errors=Number(s.errors)||0;return true;
+}catch(e){log('Unable to restore saved checkpoint: '+e.message);return false;}}
+buildByteGrid();if(!restore())loadPreset('animation');refreshBytes();refreshPreview();log('Scanner v8 color-primed combination lab ready. '+(cursor?'Restored checkpoint at candidate #'+formatNum(cursor+1):'Select bytes and connect.'));
+</script>
+</body>
+</html>
